@@ -1,0 +1,1779 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1e1e2e">
+<title>国际象棋 · 人机对战（离线版）</title>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  :root { --base-sq: 44px; --zoom: 1; }
+  html, body { margin: 0; padding: 0; max-width: 100%; overflow-x: auto; }
+  body {
+    background: #1e1e2e;
+    color: #e6e6ef;
+    font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px 12px 20px;
+  }
+  h1 { font-size: 20px; margin: 6px 0 10px; font-weight: 600; letter-spacing: 1px; }
+  .panel {
+    width: 100%;
+    max-width: 560px;
+    background: #27273a;
+    border-radius: 14px;
+    padding: 12px;
+    box-shadow: 0 4px 18px rgba(0,0,0,.35);
+  }
+  .board {
+    display: grid;
+    grid-template-columns: repeat(8, calc(var(--base-sq) * var(--zoom)));
+    grid-template-rows: repeat(8, calc(var(--base-sq) * var(--zoom)));
+    width: calc(var(--base-sq) * var(--zoom) * 8);
+    margin: 0 auto;
+    border-radius: 8px;
+    overflow: hidden;
+    user-select: none;
+    touch-action: manipulation;
+  }
+  .sq {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: calc(var(--base-sq) * var(--zoom) * 0.82);
+    cursor: pointer;
+  }
+  .sq.light { background: #f0d9b5; }
+  .sq.dark { background: #b58863; }
+  .sq.sel { box-shadow: inset 0 0 0 4px #f5d76e; z-index: 1; }
+  .sq.last { box-shadow: inset 0 0 0 4px #38bdf8; filter: brightness(1.06); }
+  .sq.capture { animation: capturePulse .9s ease-out; z-index: 2; }
+  @keyframes capturePulse {
+    0% { box-shadow: inset 0 0 0 6px rgba(248, 113, 113, .95); }
+    100% { box-shadow: inset 0 0 0 2px rgba(248, 113, 113, .4); }
+  }
+  .sq.check .piece { color: #d43d3d; text-shadow: 0 0 8px rgba(212, 61, 61, .9); }
+  .sq.target { cursor: pointer; }
+  .sq.best-from { box-shadow: inset 0 0 0 4px #4ade80; z-index: 1; }
+  .sq.best-to { box-shadow: inset 0 0 0 4px #22c55e; z-index: 1; }
+  .dot {
+    position: absolute;
+    width: 26%;
+    height: 26%;
+    border-radius: 50%;
+    background: rgba(20, 20, 30, .35);
+    pointer-events: none;
+  }
+  .piece { line-height: 1; }
+  .piece.white, .promo-btns button.promo-piece.white {
+    color: #f5f5f5;
+    text-shadow: 0 0 3px #000, 0 0 3px #000, 0 2px 3px rgba(0,0,0,.7);
+  }
+  .piece.black, .promo-btns button.promo-piece.black {
+    color: #141414;
+    text-shadow: 0 0 3px #fff, 0 0 3px #fff, 0 2px 3px rgba(0,0,0,.35);
+  }
+  .coord {
+    position: absolute;
+    font-size: calc(var(--base-sq) * var(--zoom) * 0.22);
+    line-height: 1;
+    opacity: .6;
+    pointer-events: none;
+  }
+  .coord-file { right: 3px; bottom: 2px; }
+  .coord-rank { left: 3px; top: 2px; }
+  .sq.light .coord { color: #6a5a42; }
+  .sq.dark .coord { color: #efe2cb; }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+    align-items: center;
+  }
+  select, button {
+    background: #3b3b54;
+    color: #e6e6ef;
+    border: 1px solid #4d4d6e;
+    border-radius: 9px;
+    padding: 9px 12px;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  button:active { transform: scale(.97); }
+  .status {
+    margin-top: 10px;
+    font-size: 16px;
+    min-height: 24px;
+    text-align: center;
+    color: #f5d76e;
+  }
+  .material {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .material-bar {
+    flex: 1;
+    display: flex;
+    height: 12px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #3b3b54;
+  }
+  .material-bar .bar-w { background: #f5f5f5; width: 50%; transition: width .4s; }
+  .material-bar .bar-b { background: #141414; width: 50%; transition: width .4s; }
+  .material-text {
+    font-size: 14px;
+    color: #c9c9dd;
+    min-width: 84px;
+    text-align: right;
+  }
+  .zoom-group { display: flex; align-items: center; gap: 4px; }
+  .zoom-group button { width: 38px; padding: 9px 0; font-size: 16px; }
+  .zoom-label { font-size: 13px; min-width: 44px; text-align: center; color: #c9c9dd; }
+  .hint-check { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+  .hint-check input { width: 16px; height: 16px; }
+  .review-btn {
+    display: none;
+    margin: 12px auto 0;
+    background: #2f6f4f;
+    border-color: #3f9a6a;
+    font-size: 16px;
+    padding: 10px 26px;
+  }
+  .review-btn.show { display: block; }
+  #toast {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%) translateY(20px);
+    background: #f5d76e;
+    color: #1e1e2e;
+    padding: 10px 16px;
+    border-radius: 10px;
+    font-size: 15px;
+    box-shadow: 0 4px 16px rgba(0,0,0,.4);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s, transform .3s;
+    z-index: 20;
+    max-width: 90vw;
+    text-align: center;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .movelog {
+    margin-top: 10px;
+    background: #20202f;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 14px;
+    min-height: 44px;
+    max-height: 130px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    font-family: "PingFang SC", "Microsoft YaHei", monospace;
+    color: #c9c9dd;
+  }
+  .hint { margin-top: 10px; font-size: 12px; color: #8a8aa5; text-align: center; }
+  .modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.55);
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+  .modal.show { display: flex; }
+  .modal .box {
+    background: #27273a;
+    border-radius: 14px;
+    padding: 18px 20px;
+    text-align: center;
+  }
+  .modal .box .title { margin-bottom: 12px; font-size: 16px; }
+  .promo-btns { display: flex; gap: 10px; justify-content: center; }
+  .promo-btns button {
+    font-size: 34px;
+    width: 58px;
+    height: 58px;
+    padding: 0;
+    line-height: 1;
+  }
+  .modal .cancel { margin-top: 12px; }
+  .review-modal .box {
+    width: min(94vw, 540px);
+    text-align: left;
+    max-height: 88vh;
+    overflow-y: auto;
+  }
+  .review-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .review-title { font-size: 18px; font-weight: 600; }
+  .review-head .cancel { margin: 0; padding: 7px 12px; font-size: 14px; }
+  .curve-wrap {
+    background: #20202f;
+    border-radius: 10px;
+    padding: 8px;
+    margin: 10px 0 4px;
+  }
+  .curve-wrap svg { width: 100%; height: 120px; display: block; }
+  .legend {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    font-size: 12px;
+    color: #c9c9dd;
+    margin: 6px 0 10px;
+    flex-wrap: wrap;
+  }
+  .legend .dot-good { color: #4ade80; }
+  .legend .dot-inaccuracy { color: #fbbf24; }
+  .legend .dot-mistake { color: #fb923c; }
+  .legend .dot-blunder { color: #f87171; }
+  .move-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 230px;
+    overflow-y: auto;
+    background: #20202f;
+    border-radius: 10px;
+    padding: 8px;
+  }
+  .move-row { display: flex; gap: 6px; align-items: center; }
+  .move-num { width: 32px; color: #8a8aa5; font-size: 13px; text-align: right; flex: none; }
+  .move-btn {
+    flex: 1;
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #3b3b54;
+    border: 1px solid #4d4d6e;
+    color: #e6e6ef;
+    font-size: 14px;
+    cursor: pointer;
+    text-align: left;
+  }
+  .move-btn.active { background: #4f4f78; border-color: #f5d76e; }
+  .move-btn .tag { float: right; font-size: 12px; color: #c9c9dd; }
+  .move-btn .desc { display: block; font-size: 11px; color: #8a8aa5; line-height: 1.4; }
+  .notation-help {
+    background: #20202f;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-top: 10px;
+    font-size: 13px;
+    color: #c9c9dd;
+    line-height: 1.7;
+  }
+  .notation-help summary { cursor: pointer; color: #f5d76e; }
+  .notation-help p { margin: 8px 0 0; }
+  .move-btn.player-good { border-color: #4ade80; }
+  .move-btn.player-inaccuracy { border-color: #fbbf24; }
+  .move-btn.player-mistake { border-color: #fb923c; }
+  .move-btn.player-blunder { border-color: #f87171; }
+  .review-nav { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+  .review-nav button { flex: 1; padding: 9px 6px; font-size: 14px; }
+  .compare {
+    background: #20202f;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-top: 10px;
+    font-size: 14px;
+    line-height: 1.7;
+    color: #e6e6ef;
+  }
+  .learn { margin-top: 10px; }
+  .learn h3 { margin: 12px 0 6px; font-size: 15px; color: #f5d76e; }
+  .learn p { font-size: 14px; line-height: 1.7; color: #c9c9dd; margin: 0 0 8px; }
+  .learn .know-log { font-size: 13px; }
+</style>
+</head>
+<body>
+  <h1>♟ 国际象棋 · 人机对战</h1>
+  <div class="panel">
+    <div id="board" class="board"></div>
+    <div class="controls">
+      <label>难度
+        <select id="difficulty">
+          <option value="-1">陪练（最轻松）</option>
+          <option value="0">新手</option>
+          <option value="1">简单</option>
+          <option value="2" selected>中等</option>
+          <option value="3">困难</option>
+        </select>
+      </label>
+      <label>执子
+        <select id="color">
+          <option value="1" selected>执白（先手）</option>
+          <option value="-1">执黑（后手）</option>
+        </select>
+      </label>
+      <button id="undo">悔棋</button>
+      <button id="restart">重新开始</button>
+      <button id="exportBtn">导出棋谱</button>
+      <span class="zoom-group">
+        <button id="zoomOut" title="缩小">－</button>
+        <span id="zoomLabel" class="zoom-label">100%</span>
+        <button id="zoomIn" title="放大">＋</button>
+      </span>
+      <label class="hint-check">
+        <input type="checkbox" id="hintToggle" checked> 走棋提示
+      </label>
+    </div>
+    <div id="status" class="status">准备中…</div>
+    <div id="material" class="material">
+      <div class="material-bar">
+        <div id="materialBarW" class="bar-w"></div>
+        <div id="materialBarB" class="bar-b"></div>
+      </div>
+      <span id="materialText" class="material-text">子力均衡</span>
+    </div>
+    <div id="movelog" class="movelog"></div>
+    <button id="reviewBtn" class="review-btn">📊 查看复盘</button>
+    <div class="hint">点击选择棋子 → 点击目标格走棋 → 对局结束后点「查看复盘」回顾每一步</div>
+  </div>
+
+  <div id="promoModal" class="modal">
+    <div class="box">
+      <div id="promoTitle" class="title">兵升变为：</div>
+      <div class="promo-btns">
+        <button data-promo="q">♛</button>
+        <button data-promo="r">♜</button>
+        <button data-promo="b">♝</button>
+        <button data-promo="n">♞</button>
+      </div>
+      <button id="promoCancel" class="cancel">取消</button>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <div id="exportModal" class="modal">
+    <div class="box">
+      <div class="title">棋谱记录</div>
+      <textarea id="exportText" rows="10" readonly
+        style="width: 100%; box-sizing: border-box; background: #20202f; color: #c9c9dd;
+               border: 1px solid #4d4d6e; border-radius: 8px; padding: 10px;
+               font-size: 14px; font-family: monospace; resize: none;"></textarea>
+      <div style="margin-top: 12px; display: flex; gap: 10px; justify-content: center;">
+        <button id="exportCopy">复制</button>
+        <button id="exportClose" class="cancel">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="reviewModal" class="modal review-modal">
+    <div class="box">
+      <div class="review-head">
+        <span class="review-title">📊 对局复盘</span>
+        <button id="reviewClose" class="cancel">关闭</button>
+      </div>
+      <div id="reviewCurve" class="curve-wrap"></div>
+      <details class="notation-help">
+        <summary>棋谱符号怎么看？点这里 👇</summary>
+        <p>K=王 · Q=后 · R=车 · B=象 · N=马（K 给了王，马用 N）· 兵没有字母，直接写格子，如 e4 · x=吃子（Nxe5 就是马吃 e5）· +=将军 · #=将杀 · O-O=王车易位</p>
+      </details>
+      <div class="legend">
+        <span class="dot-good">● 好棋</span>
+        <span class="dot-inaccuracy">● 稍差</span>
+        <span class="dot-mistake">● 失误</span>
+        <span class="dot-blunder">● 败着</span>
+      </div>
+      <div id="reviewMoves" class="move-list"></div>
+      <div id="reviewCompare" class="compare"></div>
+      <div class="review-nav">
+        <button id="reviewPrev">◀ 上一步</button>
+        <button id="reviewBest">摆出最佳走法</button>
+        <button id="reviewNext">下一步 ▶</button>
+      </div>
+      <div id="reviewLearn" class="learn"></div>
+    </div>
+  </div>
+
+  <script>
+  // 国际象棋引擎：纯逻辑，无界面依赖，可被 Node 直接测试。
+// 棋盘：8x8 数组，索引 0=a8 ... 63=h1；白方大写 P/N/B/R/Q/K，黑方小写。
+// 目标：人机对战、离线、规则完整（王车易位/吃过路兵/升变/将军/胜负/和棋）。
+(function (global) {
+  "use strict";
+
+  const START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+  const VAL = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
+
+  // 简化棋位价值表（白方视角；黑方镜像）
+  const PST = {
+    p: [
+      0, 0, 0, 0, 0, 0, 0, 0,
+      50, 50, 50, 50, 50, 50, 50, 50,
+      10, 10, 20, 30, 30, 20, 10, 10,
+      5, 5, 10, 25, 25, 10, 5, 5,
+      0, 0, 0, 20, 20, 0, 0, 0,
+      5, -5, -10, 0, 0, -10, -5, 5,
+      5, 10, 10, -20, -20, 10, 10, 5,
+      0, 0, 0, 0, 0, 0, 0, 0
+    ],
+    n: [
+      -50, -40, -30, -30, -30, -30, -40, -50,
+      -40, -20, 0, 0, 0, 0, -20, -40,
+      -30, 0, 10, 15, 15, 10, 0, -30,
+      -30, 5, 15, 20, 20, 15, 5, -30,
+      -30, 0, 15, 20, 20, 15, 0, -30,
+      -30, 5, 10, 15, 15, 10, 5, -30,
+      -40, -20, 0, 5, 5, 0, -20, -40,
+      -50, -40, -30, -30, -30, -30, -40, -50
+    ],
+    b: [
+      -20, -10, -10, -10, -10, -10, -10, -20,
+      -10, 0, 0, 0, 0, 0, 0, -10,
+      -10, 0, 5, 10, 10, 5, 0, -10,
+      -10, 5, 5, 10, 10, 5, 5, -10,
+      -10, 0, 10, 10, 10, 10, 0, -10,
+      -10, 10, 10, 10, 10, 10, 10, -10,
+      -10, 5, 0, 0, 0, 0, 5, -10,
+      -20, -10, -10, -10, -10, -10, -10, -20
+    ],
+    r: [
+      0, 0, 0, 0, 0, 0, 0, 0,
+      5, 10, 10, 10, 10, 10, 10, 5,
+      -5, 0, 0, 0, 0, 0, 0, -5,
+      -5, 0, 0, 0, 0, 0, 0, -5,
+      -5, 0, 0, 0, 0, 0, 0, -5,
+      -5, 0, 0, 0, 0, 0, 0, -5,
+      -5, 0, 0, 0, 0, 0, 0, -5,
+      0, 0, 0, 5, 5, 0, 0, 0
+    ],
+    q: [
+      -20, -10, -10, -5, -5, -10, -10, -20,
+      -10, 0, 0, 0, 0, 0, 0, -10,
+      -10, 0, 5, 5, 5, 5, 0, -10,
+      -5, 0, 5, 5, 5, 5, 0, -5,
+      0, 0, 5, 5, 5, 5, 0, -5,
+      -10, 5, 5, 5, 5, 5, 0, -10,
+      -10, 0, 5, 0, 0, 0, 0, -10,
+      -20, -10, -10, -5, -5, -10, -10, -20
+    ],
+    k: [
+      -30, -40, -40, -50, -50, -40, -40, -30,
+      -30, -40, -40, -50, -50, -40, -40, -30,
+      -30, -40, -40, -50, -50, -40, -40, -30,
+      -30, -40, -40, -50, -50, -40, -40, -30,
+      -20, -30, -30, -40, -40, -30, -30, -20,
+      -10, -20, -20, -20, -20, -20, -20, -10,
+      20, 20, 0, 0, 0, 0, 20, 20,
+      20, 30, 10, 0, 0, 10, 30, 20
+    ]
+  };
+
+  const FILE_NAMES = "abcdefgh";
+
+  function parseFen(fen) {
+    const parts = fen.trim().split(/\s+/);
+    const rows = parts[0].split("/");
+    const board = new Array(64).fill(null);
+    for (let r = 0; r < 8; r++) {
+      let c = 0;
+      for (const ch of rows[r]) {
+        if (/\d/.test(ch)) c += parseInt(ch, 10);
+        else board[r * 8 + c++] = ch;
+      }
+    }
+    const castling = { K: false, Q: false, k: false, q: false };
+    for (const ch of (parts[2] || "-")) {
+      if (ch in castling) castling[ch] = true;
+    }
+    return {
+      board: board,
+      turn: parts[1] === "w" ? 1 : -1,
+      castling: castling,
+      ep: parts[3] === "-" ? -1 : nameToSq(parts[3]),
+      halfmove: parseInt(parts[4] || "0", 10),
+      fullmove: parseInt(parts[5] || "1", 10)
+    };
+  }
+
+  function exportFen(state) {
+    let rows = [];
+    for (let r = 0; r < 8; r++) {
+      let row = "", empty = 0;
+      for (let c = 0; c < 8; c++) {
+        const p = state.board[r * 8 + c];
+        if (p) { if (empty) { row += empty; empty = 0; } row += p; }
+        else empty++;
+      }
+      if (empty) row += empty;
+      rows.push(row);
+    }
+    let c = "";
+    if (state.castling.K) c += "K";
+    if (state.castling.Q) c += "Q";
+    if (state.castling.k) c += "k";
+    if (state.castling.q) c += "q";
+    return rows.join("/") + " " + (state.turn === 1 ? "w" : "b") + " " + (c || "-") +
+      " " + (state.ep === -1 ? "-" : sqToName(state.ep)) + " " +
+      state.halfmove + " " + state.fullmove;
+  }
+
+  function fileOf(i) { return i % 8; }
+  function rankOf(i) { return Math.floor(i / 8); }
+  function sqToName(i) { return FILE_NAMES[fileOf(i)] + (8 - rankOf(i)); }
+  function nameToSq(name) {
+    const f = FILE_NAMES.indexOf(name[0]);
+    const r = 8 - parseInt(name[1], 10);
+    return r * 8 + f;
+  }
+  function colorOf(p) { return p && p === p.toUpperCase() ? 1 : (p ? -1 : 0); }
+  function typeOf(p) { return p ? p.toLowerCase() : ""; }
+
+  function isSquareAttacked(state, sq, byColor) {
+    const b = state.board;
+    const f = fileOf(sq), r = rankOf(sq);
+    // 兵
+    const pd = byColor === 1 ? -1 : 1;
+    for (const df of [-1, 1]) {
+      const rf = r + pd, ff = f + df;
+      if (rf >= 0 && rf < 8 && ff >= 0 && ff < 8) {
+        const p = b[rf * 8 + ff];
+        if (p && colorOf(p) === byColor && typeOf(p) === "p") return true;
+      }
+    }
+    // 马
+    for (const [dx, dy] of [[1,2],[2,1],[2,-1],[1,-2],[-1,-2],[-2,-1],[-2,1],[-1,2]]) {
+      const rf = r + dy, ff = f + dx;
+      if (rf >= 0 && rf < 8 && ff >= 0 && ff < 8) {
+        const p = b[rf * 8 + ff];
+        if (p && colorOf(p) === byColor && typeOf(p) === "n") return true;
+      }
+    }
+    // 王
+    for (const [dx, dy] of [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]]) {
+      const rf = r + dy, ff = f + dx;
+      if (rf >= 0 && rf < 8 && ff >= 0 && ff < 8) {
+        const p = b[rf * 8 + ff];
+        if (p && colorOf(p) === byColor && typeOf(p) === "k") return true;
+      }
+    }
+    // 斜线：象/后
+    for (const [dx, dy] of [[1,1],[1,-1],[-1,1],[-1,-1]]) {
+      let rf = r + dy, ff = f + dx;
+      while (rf >= 0 && rf < 8 && ff >= 0 && ff < 8) {
+        const p = b[rf * 8 + ff];
+        if (p) {
+          if (colorOf(p) === byColor && (typeOf(p) === "b" || typeOf(p) === "q")) return true;
+          break;
+        }
+        rf += dy; ff += dx;
+      }
+    }
+    // 直线：车/后
+    for (const [dx, dy] of [[1,0],[0,1],[-1,0],[0,-1]]) {
+      let rf = r + dy, ff = f + dx;
+      while (rf >= 0 && rf < 8 && ff >= 0 && ff < 8) {
+        const p = b[rf * 8 + ff];
+        if (p) {
+          if (colorOf(p) === byColor && (typeOf(p) === "r" || typeOf(p) === "q")) return true;
+          break;
+        }
+        rf += dy; ff += dx;
+      }
+    }
+    return false;
+  }
+
+  function findKing(state, color) {
+    const k = color === 1 ? "K" : "k";
+    return state.board.indexOf(k);
+  }
+
+  function inCheck(state, color) {
+    const k = findKing(state, color);
+    return k !== -1 && isSquareAttacked(state, k, -color);
+  }
+
+  // 生成伪合法走法（不含王车易位的合法性检查，由 makeMove 后过滤）
+  function pseudoMoves(state, color) {
+    const b = state.board;
+    const moves = [];
+    const pd = color === 1 ? -1 : 1;
+    const homeRank = color === 1 ? 6 : 1;
+    const promoRank = color === 1 ? 0 : 7;
+
+    for (let i = 0; i < 64; i++) {
+      const p = b[i];
+      if (!p || colorOf(p) !== color) continue;
+      const t = typeOf(p);
+      const f = fileOf(i), r = rankOf(i);
+
+      if (t === "p") {
+        const one = i + pd * 8;
+        if (one >= 0 && one < 64 && !b[one]) {
+          if (r + pd === promoRank) {
+            for (const pr of ["q", "r", "b", "n"]) moves.push({ from: i, to: one, promotion: pr });
+          } else {
+            moves.push({ from: i, to: one });
+            if (r === homeRank && !b[i + pd * 16]) moves.push({ from: i, to: i + pd * 16 });
+          }
+        }
+        for (const df of [-1, 1]) {
+          const ff = f + df, rf = r + pd;
+          if (ff < 0 || ff > 7 || rf < 0 || rf > 7) continue;
+          const cap = rf * 8 + ff;
+          if (b[cap] && colorOf(b[cap]) !== color) {
+            if (rf === promoRank) {
+              for (const pr of ["q", "r", "b", "n"]) moves.push({ from: i, to: cap, promotion: pr });
+            } else {
+              moves.push({ from: i, to: cap });
+            }
+          } else if (cap === state.ep) {
+            moves.push({ from: i, to: cap, ep: true });
+          }
+        }
+      } else if (t === "n" || t === "k") {
+        const dirs = t === "n"
+          ? [[1,2],[2,1],[2,-1],[1,-2],[-1,-2],[-2,-1],[-2,1],[-1,2]]
+          : [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+        for (const [dx, dy] of dirs) {
+          const ff = f + dx, rf = r + dy;
+          if (ff < 0 || ff > 7 || rf < 0 || rf > 7) continue;
+          const to = rf * 8 + ff;
+          if (!b[to] || colorOf(b[to]) !== color) moves.push({ from: i, to: to });
+        }
+      } else {
+        const dirs = t === "b"
+          ? [[1,1],[1,-1],[-1,1],[-1,-1]]
+          : t === "r"
+            ? [[1,0],[0,1],[-1,0],[0,-1]]
+            : [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+        for (const [dx, dy] of dirs) {
+          let ff = f + dx, rf = r + dy;
+          while (ff >= 0 && ff <= 7 && rf >= 0 && rf <= 7) {
+            const to = rf * 8 + ff;
+            if (!b[to]) {
+              moves.push({ from: i, to: to });
+            } else {
+              if (colorOf(b[to]) !== color) moves.push({ from: i, to: to });
+              break;
+            }
+            ff += dx; rf += dy;
+          }
+        }
+      }
+    }
+
+    // 王车易位（伪走法；合法性由外部检查）
+    const kIdx = findKing(state, color);
+    if (kIdx !== -1) {
+      const row = rankOf(kIdx);
+      const empty = [0, 0];
+      if (color === 1 && row === 7) {
+        if (state.castling.K && !b[61] && !b[62] && b[63] === "R") moves.push({ from: 60, to: 62, castle: "K" });
+        if (state.castling.Q && !b[57] && !b[58] && !b[59] && b[56] === "R") moves.push({ from: 60, to: 58, castle: "Q" });
+      } else if (color === -1 && row === 0) {
+        if (state.castling.k && !b[5] && !b[6] && b[7] === "r") moves.push({ from: 4, to: 6, castle: "k" });
+        if (state.castling.q && !b[1] && !b[2] && !b[3] && b[0] === "r") moves.push({ from: 4, to: 2, castle: "q" });
+      }
+    }
+    return moves;
+  }
+
+  function makeMove(state, move) {
+    const b = state.board.slice();
+    const piece = b[move.from];
+    const captured = b[move.to];
+    const castling = Object.assign({}, state.castling);
+    let halfmove = state.halfmove + 1;
+    let ep = -1;
+
+    b[move.to] = move.promotion ? (state.turn === 1 ? move.promotion.toUpperCase() : move.promotion) : piece;
+    b[move.from] = null;
+
+    if (move.ep) {
+      const capSq = move.to + (state.turn === 1 ? 8 : -8);
+      b[capSq] = null;
+    }
+    if (move.castle) {
+      const row = state.turn === 1 ? 7 : 0;
+      if (move.castle === "K" || move.castle === "k") { b[row * 8 + 5] = b[row * 8 + 7]; b[row * 8 + 7] = null; }
+      else { b[row * 8 + 3] = b[row * 8]; b[row * 8] = null; }
+    }
+
+    if (typeOf(piece) === "p" || captured) halfmove = 0;
+    if (typeOf(piece) === "p" && Math.abs(move.to - move.from) === 16) {
+      ep = move.from + (move.to - move.from) / 2;
+    }
+
+    const k = state.turn === 1 ? "K" : "k";
+    if (typeOf(piece) === "k") { castling[k] = false; castling[k === "K" ? "Q" : "q"] = false; }
+    if (move.from === 56 || move.to === 56) castling.Q = false;
+    if (move.from === 63 || move.to === 63) castling.K = false;
+    if (move.from === 0 || move.to === 0) castling.q = false;
+    if (move.from === 7 || move.to === 7) castling.k = false;
+
+    return {
+      board: b,
+      turn: -state.turn,
+      castling: castling,
+      ep: ep,
+      halfmove: halfmove,
+      fullmove: state.turn === -1 ? state.fullmove + 1 : state.fullmove
+    };
+  }
+
+  function legalMoves(state, color) {
+    const c = color || state.turn;
+    const out = [];
+    for (const m of pseudoMoves(state, c)) {
+      // 易位额外检查：王不能穿过被攻击的格子
+      if (m.castle) {
+        const row = c === 1 ? 7 : 0;
+        const king = c === 1 ? 60 : 4;
+        const through = m.castle === "K" || m.castle === "k" ? king + 1 : king - 1;
+        const dest = m.to;
+        if (isSquareAttacked(state, king, -c)) continue;
+        if (isSquareAttacked(state, through, -c)) continue;
+        if (isSquareAttacked(state, dest, -c)) continue;
+      }
+      const after = makeMove(state, m);
+      if (!inCheck(after, c)) out.push(m);
+    }
+    return out;
+  }
+
+  function insufficientMaterial(state) {
+    const pieces = [];
+    for (const p of state.board) if (p) pieces.push(p.toLowerCase());
+    const nonKing = pieces.filter((t) => t !== "k");
+    if (nonKing.length === 0) return true;
+    if (nonKing.length === 1 && (nonKing[0] === "n" || nonKing[0] === "b")) return true;
+    // 仅剩同色象
+    if (nonKing.length === 2 && nonKing.every((t) => t === "b")) {
+      const sqs = [];
+      state.board.forEach((p, i) => { if (p && p.toLowerCase() === "b") sqs.push(i); });
+      const parity = sqs.map((s) => (fileOf(s) + rankOf(s)) % 2);
+      if (parity[0] === parity[1]) return true;
+    }
+    return false;
+  }
+
+  function gameStatus(state) {
+    const color = state.turn;
+    const moves = legalMoves(state, color);
+    const check = inCheck(state, color);
+    if (moves.length === 0) return check ? "checkmate" : "stalemate";
+    if (state.halfmove >= 100) return "draw50";
+    if (insufficientMaterial(state)) return "drawmaterial";
+    return check ? "check" : "normal";
+  }
+
+  function evaluate(state) {
+    let score = 0;
+    for (let i = 0; i < 64; i++) {
+      const p = state.board[i];
+      if (!p) continue;
+      const c = colorOf(p);
+      const t = typeOf(p);
+      let v = VAL[t];
+      const pst = PST[t];
+      if (pst) {
+        const idx = c === 1 ? i : (7 - rankOf(i)) * 8 + fileOf(i);
+        v += pst[idx];
+      }
+      score += c * v;
+    }
+    return score;
+  }
+
+  function orderMoves(moves, state) {
+    const scored = moves.map((m) => {
+      let s = 0;
+      const cap = state.board[m.to];
+      if (cap) s += 10 * VAL[typeOf(cap)] - VAL[typeOf(state.board[m.from])] / 10;
+      if (m.promotion) s += VAL[m.promotion];
+      return { m: m, s: s };
+    });
+    scored.sort((a, b) => b.s - a.s);
+    return scored.map((x) => x.m);
+  }
+
+  function negamax(state, depth, alpha, beta, color) {
+    const status = gameStatus(state);
+    if (status === "checkmate") return -(100000 + depth);
+    if (status === "stalemate" || status === "draw50" || status === "drawmaterial") return 0;
+    if (depth === 0) return color * evaluate(state);
+
+    let best = -Infinity;
+    const moves = orderMoves(legalMoves(state, state.turn), state);
+    for (const m of moves) {
+      const after = makeMove(state, m);
+      const score = -negamax(after, depth - 1, -beta, -alpha, -color);
+      if (score > best) best = score;
+      if (best > alpha) alpha = best;
+      if (alpha >= beta) break;
+    }
+    return best;
+  }
+
+  function bestMove(state, depth) {
+    const color = state.turn;
+    const moves = orderMoves(legalMoves(state, color), state);
+    if (moves.length === 0) return null;
+    let best = -Infinity;
+    let bestMoves = [];
+    for (const m of moves) {
+      const after = makeMove(state, m);
+      const score = -negamax(after, depth - 1, -Infinity, Infinity, -color);
+      if (score > best + 1) { best = score; bestMoves = [m]; }
+      else if (Math.abs(score - best) <= 1) bestMoves.push(m);
+    }
+    return bestMoves[Math.floor(Math.random() * bestMoves.length)];
+  }
+
+  // 某一步走完后的评分（正数 = 对走子方有利）
+  function moveScore(state, move, depth) {
+    const after = makeMove(state, move);
+    return -negamax(after, depth - 1, -Infinity, Infinity, -state.turn);
+  }
+
+  // 当前局面最好的一步评分
+  function bestScore(state, depth) {
+    let best = -Infinity;
+    const moves = legalMoves(state, state.turn);
+    for (const m of moves) {
+      const s = moveScore(state, m, depth);
+      if (s > best) best = s;
+    }
+    return best;
+  }
+
+  // 新手用：有概率只吃子，其余随机走（水平很低，适合刚入门玩家）
+  function randomMove(state, captureBias) {
+    const moves = legalMoves(state, state.turn);
+    if (moves.length === 0) return null;
+    if (captureBias) {
+      const caps = moves.filter(function (m) { return state.board[m.to] || m.ep; });
+      if (caps.length > 0 && Math.random() < 0.5) {
+        return caps[Math.floor(Math.random() * caps.length)];
+      }
+    }
+    return moves[Math.floor(Math.random() * moves.length)];
+  }
+
+  // 子力差：正数 = 白方领先（单位：兵）
+  function material(state) {
+    let net = 0;
+    for (const p of state.board) {
+      if (p) net += VAL[typeOf(p)] * colorOf(p);
+    }
+    return net;
+  }
+
+  function materialScores(state) {
+    let w = 0, b = 0;
+    for (const p of state.board) {
+      if (!p) continue;
+      if (colorOf(p) === 1) w += VAL[typeOf(p)];
+      else b += VAL[typeOf(p)];
+    }
+    return { white: w, black: b };
+  }
+
+  function perft(state, depth) {
+    if (depth === 0) return 1;
+    let n = 0;
+    for (const m of legalMoves(state, state.turn)) {
+      n += perft(makeMove(state, m), depth - 1);
+    }
+    return n;
+  }
+
+  const api = {
+    START_FEN: START_FEN,
+    parseFen: parseFen,
+    exportFen: exportFen,
+    sqToName: sqToName,
+    nameToSq: nameToSq,
+    colorOf: colorOf,
+    typeOf: typeOf,
+    inCheck: inCheck,
+    isSquareAttacked: isSquareAttacked,
+    legalMoves: legalMoves,
+    makeMove: makeMove,
+    gameStatus: gameStatus,
+    evaluate: evaluate,
+    bestMove: bestMove,
+    moveScore: moveScore,
+    bestScore: bestScore,
+    randomMove: randomMove,
+    material: material,
+    materialScores: materialScores,
+    perft: perft
+  };
+
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  else global.CHESS = api;
+})(typeof window !== "undefined" ? window : globalThis);
+
+  </script>
+  <script>
+  // 知识库：开局小知识、特殊走法小知识、教练一句话点评、记谱中文解释、小课堂（纯逻辑，可 Node 测试）
+(function (global) {
+  "use strict";
+
+  var PIECE_CN = { K: "王", Q: "后", R: "车", B: "象", N: "马", P: "兵", k: "王", q: "后", r: "车", b: "象", n: "马", p: "兵" };
+
+  var OPENINGS = [
+    { moves: ["e4", "e5", "Nf3", "Nc6", "Bc4"], name: "意大利开局", note: "白方快速出子，瞄准 f7 弱点，是最经典的初学者开局之一。" },
+    { moves: ["e4", "e5", "Nf3", "Nc6", "Bb5"], name: "西班牙开局（鲁伊·洛佩兹）", note: "白方用象压住黑马、牵制黑方中心，是高手开局里最常见的之一。" },
+    { moves: ["e4", "e5", "Nf3", "Nc6", "d4"], name: "苏格兰开局", note: "白方立刻打开中心，出子速度快，对新手很友好。" },
+    { moves: ["e4", "c5"], name: "西西里防御", note: "黑方不让白方轻易占稳中心，是应对 e4 最流行的反击开局。" },
+    { moves: ["e4", "e6"], name: "法兰西防御", note: "黑方先巩固 e6，再准备 d5 反击中心，稳健而扎实。" },
+    { moves: ["e4", "c6"], name: "卡罗·卡恩防御", note: "黑方用 c6 + d5 抢中心，很少被强攻，新手很合适。" },
+    { moves: ["e4", "e5", "f4"], name: "王翼弃兵", note: "白方用 f 兵换中心控制权，是一支古老而激烈的开局。" },
+    { moves: ["d4", "d5", "c4"], name: "后翼弃兵", note: "白方用 c 兵引诱黑方离开中心，是 d4 开局的经典主线。" },
+    { moves: ["d4", "d5", "Nf3", "Nf6", "Bf4"], name: "伦敦体系", note: "白方不用记复杂变化，按部就班出动子力，业余局胜率很高。" },
+    { moves: ["d4", "d5", "c4", "c6"], name: "斯拉夫防御", note: "黑方既守住 d5，又让象能顺利出来，稳健实用。" },
+    { moves: ["d4", "Nf6", "c4", "g6"], name: "古印度防御", note: "黑方先让王侧翼易位，再反击中心，是黑方热门开局。" },
+    { moves: ["e4", "d5"], name: "斯堪的纳维亚防御", note: "黑方立即挑战 e4 兵，想把局面快速简化，简单直接。" },
+    { moves: ["e4", "Nf6"], name: "阿廖欣防御", note: "黑方用马引诱白兵前进，让白方的兵阵变松散。" },
+    { moves: ["c4"], name: "英国式开局", note: "白方先控制 d5 再发展，局面灵活，对手不容易背谱。" },
+    { moves: ["e4", "e5", "Nf3", "Nf6"], name: "彼得罗夫防御（俄罗斯防御）", note: "黑方立即对称反击 e4，局面容易简化成平局。" },
+    { moves: ["e4", "e5", "Nf3", "Nc6", "Nc3"], name: "四马开局", note: "双方都先出马，局面平稳，适合慢慢练习子力出动。" }
+  ];
+
+  // 在已走棋谱中精确匹配一条完整开局线路
+  function matchOpening(playedSans) {
+    for (var i = 0; i < OPENINGS.length; i++) {
+      var o = OPENINGS[i];
+      if (playedSans.length !== o.moves.length) continue;
+      var ok = true;
+      for (var j = 0; j < o.moves.length; j++) {
+        if (playedSans[j] !== o.moves[j]) { ok = false; break; }
+      }
+      if (ok) return o;
+    }
+    return null;
+  }
+
+  // 把 SAN 记谱翻译成中文，例如 Nxe5 → 马×e5（吃子）
+  function sanToText(san) {
+    var suffix = /#$/.test(san) ? "（将杀）" : /\+$/.test(san) ? "（将军）" : "";
+    var s = san.replace(/[+#]$/, "");
+    if (s === "O-O") return "王车易位（短）" + suffix;
+    if (s === "O-O-O") return "王车易位（长）" + suffix;
+    var promo = "";
+    var eq = s.indexOf("=");
+    if (eq !== -1) {
+      var pc = s.charAt(eq + 1).toUpperCase();
+      promo = "，升变为" + (PIECE_CN[pc] || pc);
+      s = s.slice(0, eq);
+    }
+    var m = /^([KQRBN])?([a-h])?x?([a-h][1-8])$/.exec(s);
+    if (!m) return san + suffix;
+    var piece = m[1] ? (PIECE_CN[m[1]] || m[1]) : "兵";
+    var isCap = s.indexOf("x") !== -1;
+    var dest = m[3];
+    return piece + (isCap ? "×" : " ") + dest + (isCap ? "（吃子）" : "") + promo + suffix;
+  }
+
+  function biteCastle() {
+    return { title: "王车易位", body: "把王藏到角落更安全，同时车能立刻投入战斗。开局尽早易位是个好习惯！" };
+  }
+  function biteEnPassant() {
+    return { title: "吃过路兵", body: "特殊规则：对方兵刚走两格、从你兵旁边经过时，你可以斜着把它吃掉，仅此一步有效。" };
+  }
+  function bitePromotion() {
+    return { title: "升变", body: "兵冲到对方底线就能变成后、车、象或马。通常选后，因为后最强！" };
+  }
+  function biteCheck() {
+    return { title: "将军", body: "你的王被攻击了！必须应对：吃掉威胁的棋子、垫一个子挡住，或者把王躲开。" };
+  }
+  function biteCheckmate() {
+    return { title: "将杀", body: "将军且对方无路可走 = 将杀，游戏结束。先将军，再看对方有没有逃跑格。" };
+  }
+  function biteStalemate() {
+    return { title: "逼和", body: "对方没被将军但无棋可走 = 逼和，算和棋！占大优时别大意，先检查对方所有走法。" };
+  }
+  function biteDraw50() {
+    return { title: "50 回合和棋", body: "双方连续 50 回合没有吃子或动兵，判为和棋。" };
+  }
+  function biteDrawMaterial() {
+    return { title: "子力不足和棋", body: "剩余子力不足以将杀（比如只剩双王、王 + 单马），判为和棋。" };
+  }
+
+  // 教练一句话：根据引擎评估损失给出友好点评（只在真正下得好时夸）
+  function coachLine(san, info) {
+    if (info.winning) return null;
+    if (info.check) return "将军！看对方怎么应对——吃子、垫子还是躲王。";
+    if (info.castle) return "漂亮，王车易位！王更安全了。";
+    if (info.promo) return "升变成功，这波兵线走得很值！";
+    if (info.capture && info.loss < 40) return "吃掉对方一子，干得漂亮。";
+    if (info.loss >= 300) return "这步有点可惜，约损失 " + (info.loss / 100).toFixed(1) + " 分——更好的走法是 " + info.bestSan + "。";
+    if (info.loss >= 120) return "这步不太划算，也许 " + info.bestSan + " 更稳。";
+    if (info.loss >= 40) return "还可以，不过 " + info.bestSan + " 可能更有威胁。";
+    if (info.loss < 25) return info.losing ? "稳住，局面还有机会。" : "好棋！";
+    return "还不错。";
+  }
+
+  var LESSONS = [
+    { id: "check-before-capture", title: "吃子前先检查", body: "每次走棋前先问自己：这个子走到那格后，会不会被对方直接吃掉？如果会，除非你有更大的计划，否则别走。" },
+    { id: "hanging", title: "别送子", body: "送子（挂子）是新手最大的失分来源。每步走完扫一眼棋盘：我是不是把子送到了对方嘴里？" },
+    { id: "fork", title: "捉双（击双）", body: "一个棋子同时攻击对方两个子，叫捉双。马最擅长捉双，因为它能跳过别的子。" },
+    { id: "pin", title: "牵制", body: "对方一个子不敢动，因为它挡在更重要的子前面（比如王或后）。象和车都擅长牵制。" },
+    { id: "castling", title: "王车易位", body: "开局尽早易位：把王藏到角落，让车出来。中局前别让王在中心闲逛。" },
+    { id: "center", title: "开局三原则", body: "1) 抢占中心（e4/d4）；2) 先出马和象；3) 尽早王车易位。别太早出动后。" },
+    { id: "checkmate", title: "将杀基础", body: "将杀 = 将军 + 无路可逃。常见杀法：后 + 车配合、后 + 象配合、车在底线杀。走将军前先想一步：对方能往哪逃？" },
+    { id: "promotion", title: "升变", body: "兵到底线必须升变。除非特殊情况，一律升后；升马只在「升后会逼和/被将杀」或「马能立即将军」时才考虑。" }
+  ];
+
+  function pickLessons(noteIds) {
+    var want = [];
+    if (noteIds.indexOf("blunder") !== -1) want.push("check-before-capture", "hanging", "fork");
+    if (noteIds.indexOf("castled") !== -1) want.push("castling");
+    if (noteIds.indexOf("promoted") !== -1) want.push("promotion");
+    if (noteIds.indexOf("mate") !== -1) want.push("checkmate");
+    if (noteIds.indexOf("good-capture") !== -1 && want.length < 2) want.push("fork", "pin");
+    if (noteIds.indexOf("opening") !== -1 && want.length < 2) want.push("center");
+    if (want.length === 0) want.push("center", "check-before-capture");
+    var out = [];
+    for (var i = 0; i < want.length && out.length < 3; i++) {
+      for (var j = 0; j < LESSONS.length; j++) {
+        if (LESSONS[j].id === want[i]) { out.push(LESSONS[j]); break; }
+      }
+    }
+    return out;
+  }
+
+  var api = {
+    PIECE_CN: PIECE_CN,
+    OPENINGS: OPENINGS,
+    matchOpening: matchOpening,
+    sanToText: sanToText,
+    biteCastle: biteCastle,
+    biteEnPassant: biteEnPassant,
+    bitePromotion: bitePromotion,
+    biteCheck: biteCheck,
+    biteCheckmate: biteCheckmate,
+    biteStalemate: biteStalemate,
+    biteDraw50: biteDraw50,
+    biteDrawMaterial: biteDrawMaterial,
+    coachLine: coachLine,
+    LESSONS: LESSONS,
+    pickLessons: pickLessons
+  };
+
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  else global.KNOWLEDGE = api;
+})(typeof window !== "undefined" ? window : globalThis);
+
+  </script>
+  <script>
+  // 界面层：依赖全局 CHESS（engine.js）和 KNOWLEDGE（knowledge.js）
+(function () {
+  "use strict";
+
+  var GLYPH = {
+    K: "♔", Q: "♕", R: "♖", B: "♗", N: "♘", P: "♙",
+    k: "♚", q: "♛", r: "♜", b: "♝", n: "♞", p: "♟"
+  };
+  var PROMO_PIECES = ["q", "r", "b", "n"];
+  var PROMO_GLYPH = { q: "♛", r: "♜", b: "♝", n: "♞" };
+  var PIECE_VAL = { p: 1, n: 3, b: 3, r: 5, q: 9 };
+
+  var boardEl, statusEl, moveLogEl, promoModal, promoTitle;
+  var materialEl, materialTextEl, materialBarW, materialBarB;
+  var zoomLabel;
+  var toastEl, toastTimer, hintOn = true;
+  var exportModal, exportText;
+  var reviewBtn, reviewModal, reviewCurve, reviewMoves, reviewCompare, reviewLearn;
+  var zoom = 1;
+  var game, playerColor, difficulty, selected, targets, history, pendingPromo;
+  var records = [], playedSans = [], knowledgeNotes = [], knowledgeLog = [];
+  var openingShown = false, openingEntry = null;
+  var reviewMode = false, reviewIndex = -1, showBestOn = false, finalGame = null;
+  var captureFlashSq = -1;
+  var EVAL_DEPTH = 2;
+
+  function $(id) { return document.getElementById(id); }
+
+  function init() {
+    boardEl = $("board");
+    statusEl = $("status");
+    moveLogEl = $("movelog");
+    promoModal = $("promoModal");
+    promoTitle = $("promoTitle");
+    materialEl = $("material");
+    materialTextEl = $("materialText");
+    materialBarW = $("materialBarW");
+    materialBarB = $("materialBarB");
+    zoomLabel = $("zoomLabel");
+    toastEl = $("toast");
+    exportModal = $("exportModal");
+    exportText = $("exportText");
+    reviewBtn = $("reviewBtn");
+    reviewModal = $("reviewModal");
+    reviewCurve = $("reviewCurve");
+    reviewMoves = $("reviewMoves");
+    reviewCompare = $("reviewCompare");
+    reviewLearn = $("reviewLearn");
+    $("difficulty").addEventListener("change", function () { difficulty = parseInt(this.value, 10); });
+    $("color").addEventListener("change", function () { newGame(parseInt(this.value, 10)); });
+    $("undo").addEventListener("click", undoMove);
+    $("restart").addEventListener("click", function () { newGame(playerColor); });
+    $("zoomOut").addEventListener("click", function () { changeZoom(-0.1); });
+    $("zoomIn").addEventListener("click", function () { changeZoom(0.1); });
+    $("hintToggle").addEventListener("change", function () { hintOn = this.checked; });
+    $("exportBtn").addEventListener("click", openExport);
+    $("exportClose").addEventListener("click", closeExport);
+    $("exportCopy").addEventListener("click", copyExport);
+    $("promoCancel").addEventListener("click", closePromo);
+    if (reviewBtn) reviewBtn.addEventListener("click", openReview);
+    if (reviewModal) {
+      $("reviewClose").addEventListener("click", closeReview);
+      $("reviewPrev").addEventListener("click", prevReview);
+      $("reviewNext").addEventListener("click", nextReview);
+      $("reviewBest").addEventListener("click", toggleBestMove);
+    }
+
+    var promoBtns = promoModal.querySelectorAll("[data-promo]");
+    for (var b = 0; b < promoBtns.length; b++) {
+      promoBtns[b].addEventListener("click", function () {
+        applyPromotion(this.getAttribute("data-promo"));
+      });
+    }
+
+    difficulty = parseInt($("difficulty").value, 10) || 2;
+    restoreZoom();
+    applyZoom();
+    fitBoard();
+    window.addEventListener("resize", fitBoard);
+    newGame(1);
+  }
+
+  function changeZoom(delta) {
+    zoom = Math.max(0.6, Math.min(2.0, Math.round((zoom + delta) * 10) / 10));
+    applyZoom();
+  }
+
+  function applyZoom() {
+    document.documentElement.style.setProperty("--zoom", zoom.toFixed(2));
+    if (zoomLabel) zoomLabel.textContent = Math.round(zoom * 100) + "%";
+    try { localStorage.setItem("chess_zoom", String(zoom)); } catch (e) { /* file:// 环境可能不支持 */ }
+  }
+
+  function restoreZoom() {
+    try {
+      var v = parseFloat(localStorage.getItem("chess_zoom"));
+      if (v >= 0.6 && v <= 2.0) zoom = v;
+    } catch (e) { /* ignore */ }
+  }
+
+  function fitBoard() {
+    var panel = boardEl.parentElement;
+    var avail = (panel.clientWidth || 320) - 24;
+    var heightLimit = (window.innerHeight || 600) * 0.6;
+    var sq = Math.max(20, Math.min(64, Math.floor(Math.min(avail, heightLimit) / 8)));
+    document.documentElement.style.setProperty("--sq", sq + "px");
+  }
+
+  function newGame(color) {
+    playerColor = color === -1 ? -1 : 1;
+    game = CHESS.parseFen(CHESS.START_FEN);
+    selected = -1;
+    targets = [];
+    history = [];
+    pendingPromo = null;
+    records = [];
+    playedSans = [];
+    knowledgeNotes = [];
+    knowledgeLog = [];
+    openingShown = false;
+    openingEntry = null;
+    reviewMode = false;
+    reviewIndex = -1;
+    showBestOn = false;
+    finalGame = null;
+    captureFlashSq = -1;
+    if (reviewBtn) reviewBtn.classList.remove("show");
+    if (reviewModal) reviewModal.classList.remove("show");
+    closePromo();
+    render();
+    if (game.turn !== playerColor) scheduleAI();
+  }
+
+  var lastMoveSquares = [];
+
+  function render() {
+    var bmFrom = -1, bmTo = -1;
+    if (reviewMode && showBestOn && records[reviewIndex] && records[reviewIndex].bestMv) {
+      bmFrom = records[reviewIndex].bestMv.from;
+      bmTo = records[reviewIndex].bestMv.to;
+    }
+    var html = "";
+    for (var i = 0; i < 64; i++) {
+      var p = game.board[i];
+      var cls = "sq " + ((Math.floor(i / 8) + i % 8) % 2 === 0 ? "light" : "dark");
+      if (i === selected) cls += " sel";
+      if (targets.some(function (m) { return m.to === i; })) cls += " target";
+      if (lastMoveSquares.indexOf(i) !== -1) cls += " last";
+      if (i === captureFlashSq) cls += " capture";
+      if (i === bmFrom) cls += " best-from";
+      if (i === bmTo) cls += " best-to";
+      if (p && (p === "K" || p === "k") && CHESS.inCheck(game, CHESS.colorOf(p))) cls += " check";
+      var dot = targets.some(function (m) { return m.to === i; }) ? '<span class="dot"></span>' : "";
+      var f = i % 8, r = Math.floor(i / 8);
+      var coord = "";
+      if (r === 7) coord += '<span class="coord coord-file">' + "abcdefgh".charAt(f) + "</span>";
+      if (f === 0) coord += '<span class="coord coord-rank">' + (8 - r) + "</span>";
+      html += '<div class="' + cls + '" data-i="' + i + '">' +
+        (p ? '<span class="piece ' + (CHESS.colorOf(p) === 1 ? "white" : "black") + '">' + GLYPH[p] + "</span>" : "") +
+        coord + dot + "</div>";
+    }
+    boardEl.innerHTML = html;
+    for (var j = 0; j < 64; j++) {
+      boardEl.children[j].addEventListener("click", makeClick(j));
+    }
+    updateStatus();
+    updateMoveLog();
+    updateMaterial();
+  }
+
+  function clearCaptureFlash() {
+    captureFlashSq = -1;
+    if (!reviewMode) render();
+  }
+
+  function makeClick(i) {
+    return function () {
+      if (reviewMode) return;
+      if (game.turn !== playerColor || isOver()) return;
+      var p = game.board[i];
+      if (selected !== -1) {
+        var mv = null;
+        for (var k = 0; k < targets.length; k++) {
+          if (targets[k].to === i) { mv = targets[k]; break; }
+        }
+        if (mv) { doPlayerMove(mv); return; }
+      }
+      if (p && CHESS.colorOf(p) === playerColor) {
+        selected = i;
+        targets = CHESS.legalMoves(game, playerColor).filter(function (m) { return m.from === i; });
+        render();
+      } else {
+        selected = -1;
+        targets = [];
+        render();
+      }
+    };
+  }
+
+  function isOver() {
+    var st = CHESS.gameStatus(game);
+    return st === "checkmate" || st === "stalemate" || st === "draw50" || st === "drawmaterial";
+  }
+
+  function doPlayerMove(mv) {
+    var needsPromo = CHESS.typeOf(game.board[mv.from]) === "p" &&
+      (mv.to < 8 || mv.to > 55);
+    if (needsPromo) {
+      pendingPromo = mv;
+      openPromo();
+      return;
+    }
+    applyPlayerMove(mv);
+  }
+
+  // 记录一步棋：评估、最佳走法、损失、标记，并触发小知识
+  function recordMove(before, mv, san, mover) {
+    var bestBefore = CHESS.bestScore(before, EVAL_DEPTH);
+    var chosen = CHESS.moveScore(before, mv, EVAL_DEPTH);
+    var after = CHESS.makeMove(before, mv);
+    var bestMv = CHESS.bestMove(before, EVAL_DEPTH);
+    var bestSan = bestMv ? moveToSan(before, bestMv) : "";
+    var bestSc = bestMv ? CHESS.moveScore(before, bestMv, EVAL_DEPTH) : bestBefore;
+    var loss = Math.max(0, bestBefore - chosen);
+    var cap = !!before.board[mv.to] || !!mv.ep;
+    var whiteEval = mover === "player" ? chosen : -chosen;
+    var flag = loss >= 300 ? "blunder" : loss >= 120 ? "mistake" : loss >= 40 ? "inaccuracy" : "good";
+    var rec = {
+      mover: mover, san: san, mv: mv, before: before, after: after,
+      bestBefore: bestBefore, chosen: chosen, bestMv: bestMv, bestSan: bestSan, bestSc: bestSc,
+      loss: loss, cap: cap, whiteEval: whiteEval, flag: flag
+    };
+    records.push(rec);
+    playedSans.push(san);
+
+    var bite = null;
+    var op = KNOWLEDGE.matchOpening(playedSans);
+    if (op && !openingShown) {
+      openingShown = true;
+      openingEntry = op;
+      bite = { title: "开局 · " + op.name, body: op.note };
+      addNote("opening");
+    }
+    if (!bite && mover === "player") {
+      if (mv.castle) { bite = KNOWLEDGE.biteCastle(); addNote("castled"); }
+      else if (mv.ep) { bite = KNOWLEDGE.biteEnPassant(); }
+      else if (mv.promotion) { bite = KNOWLEDGE.bitePromotion(); addNote("promoted"); }
+      else if (/\+$/.test(san)) { bite = KNOWLEDGE.biteCheck(); }
+    }
+    if (bite) knowledgeLog.push(bite);
+    return { rec: rec, bite: bite };
+  }
+
+  function addNote(id) {
+    if (knowledgeNotes.indexOf(id) === -1) knowledgeNotes.push(id);
+  }
+
+  // 检查刚走的棋子是否会被对方直接吃掉（挂子预警）
+  function findHang(rec) {
+    var after = rec.after;
+    var moved = after.board[rec.mv.to];
+    if (!moved) return false;
+    var myVal = PIECE_VAL[CHESS.typeOf(moved)] || 0;
+    if (myVal < 2) return null;
+    var moves = CHESS.legalMoves(after, -after.turn);
+    for (var i = 0; i < moves.length; i++) {
+      var m = moves[i];
+      if (m.to !== rec.mv.to) continue;
+      var cap = after.board[m.to];
+      if (!cap) continue;
+      var capVal = PIECE_VAL[CHESS.typeOf(cap)] || 0;
+      if (myVal - capVal >= 2) return true;
+    }
+    return false;
+  }
+
+  function coachComment(rec, san) {
+    if (!hintOn) return;
+    var hang = findHang(rec);
+    if (hang) {
+      showToast("⚠️ 挂子预警");
+      return;
+    }
+    var line = KNOWLEDGE.coachLine(san, {
+      winning: rec.chosen >= 300,
+      losing: rec.bestBefore < -150,
+      check: /\+$/.test(san),
+      castle: !!rec.mv.castle,
+      promo: !!rec.mv.promotion,
+      capture: rec.cap,
+      loss: rec.loss,
+      bestSan: rec.bestSan
+    });
+    if (line) showToast("💡 " + line);
+  }
+
+  function applyPlayerMove(mv) {
+    var before = game;
+    var san = moveToSan(before, mv);
+    var res = recordMove(before, mv, san, "player");
+    var rec = res.rec;
+    game = rec.after;
+    lastMoveSquares = [mv.from, mv.to];
+    if (rec.cap) {
+      captureFlashSq = mv.to;
+      setTimeout(clearCaptureFlash, 1000);
+    }
+    history.push({
+      player: { move: mv, san: san, before: before },
+      pRec: records.length - 1,
+      sansBeforeLen: playedSans.length - 1
+    });
+    if (res.bite) showKnowledge(res.bite);
+    else coachComment(rec, san);
+    selected = -1;
+    targets = [];
+    render();
+    if (!isOver()) scheduleAI();
+    else endGame();
+  }
+
+  function scheduleAI() {
+    statusEl.textContent = "AI 思考中…";
+    setTimeout(function () {
+      var st = CHESS.gameStatus(game);
+      if (st !== "normal" && st !== "check") return;
+      var mv = difficulty <= 0 ? CHESS.randomMove(game, difficulty === 0) : CHESS.bestMove(game, difficulty);
+      if (!mv) { render(); return; }
+      var before = game;
+      var san = moveToSan(before, mv);
+      var res = recordMove(before, mv, san, "ai");
+      game = res.rec.after;
+      lastMoveSquares = [mv.from, mv.to];
+      if (res.rec.cap) {
+        captureFlashSq = mv.to;
+        var captured = before.board[mv.to] ? before.board[mv.to] : (mv.ep ? "p" : null);
+        if (captured) {
+          var atk = CHESS.typeOf(before.board[mv.from]);
+          showToast("⚠️ AI 用" + KNOWLEDGE.PIECE_CN[atk] + "吃掉了你的" + KNOWLEDGE.PIECE_CN[CHESS.typeOf(captured)] + "！");
+        }
+        setTimeout(clearCaptureFlash, 1000);
+      }
+      var last = history[history.length - 1];
+      if (last) {
+        last.ai = { move: mv, san: san };
+        last.aRec = records.length - 1;
+      }
+      render();
+      if (isOver()) endGame();
+    }, 250);
+  }
+
+  function endGame() {
+    finalGame = game;
+    var st = CHESS.gameStatus(game);
+    var bite = null;
+    if (st === "checkmate") { bite = KNOWLEDGE.biteCheckmate(); addNote("mate"); }
+    else if (st === "stalemate") { bite = KNOWLEDGE.biteStalemate(); }
+    else if (st === "draw50") { bite = KNOWLEDGE.biteDraw50(); }
+    else if (st === "drawmaterial") { bite = KNOWLEDGE.biteDrawMaterial(); }
+    if (bite) {
+      knowledgeLog.push(bite);
+      setTimeout(function () { showKnowledge(bite); }, 700);
+    }
+    if (reviewBtn) reviewBtn.classList.add("show");
+  }
+
+  function undoMove() {
+    if (reviewMode) return;
+    if (pendingPromo) { pendingPromo = null; closePromo(); }
+    var entry = history.pop();
+    if (!entry) return;
+    records.length = entry.pRec;
+    playedSans.length = entry.sansBeforeLen;
+    if (openingEntry && playedSans.length < openingEntry.moves.length) {
+      openingShown = false;
+      openingEntry = null;
+    }
+    game = entry.player.before;
+    lastMoveSquares = [];
+    captureFlashSq = -1;
+    selected = -1;
+    targets = [];
+    if (reviewBtn) reviewBtn.classList.remove("show");
+    finalGame = null;
+    render();
+  }
+
+  function showKnowledge(bite) {
+    showToast("💡 " + bite.title + "：" + bite.body, 7000);
+  }
+
+  function showToast(text, ms) {
+    if (!toastEl) return;
+    toastEl.textContent = text;
+    toastEl.classList.add("show");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      toastEl.classList.remove("show");
+    }, ms || 5000);
+  }
+
+  function openExport() {
+    var lines = [];
+    for (var i = 0; i < history.length; i++) {
+      var e = history[i];
+      lines.push((i + 1) + ". " + e.player.san + (e.ai ? "  " + e.ai.san : ""));
+    }
+    var text = lines.join("\n");
+    text += "\n\n最终局面 FEN：\n" + CHESS.exportFen(game);
+    exportText.value = text;
+    exportModal.classList.add("show");
+  }
+
+  function closeExport() {
+    exportModal.classList.remove("show");
+  }
+
+  function copyExport() {
+    exportText.focus();
+    exportText.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(exportText.value).catch(function () {});
+    }
+    showToast(ok ? "棋谱已复制，粘贴即可分享" : "请全选后手动复制即可");
+  }
+
+  function applyPromotion(piece) {
+    if (!pendingPromo) return;
+    var mv = pendingPromo;
+    mv.promotion = piece;
+    pendingPromo = null;
+    closePromo();
+    applyPlayerMove(mv);
+  }
+
+  // ---------- 复盘模式 ----------
+  function openReview() {
+    if (!records.length) return;
+    reviewMode = true;
+    reviewIndex = records.length - 1;
+    showBestOn = false;
+    var rbtn = $("reviewBest");
+    if (rbtn) rbtn.textContent = "摆出最佳走法";
+    game = records[reviewIndex].after;
+    lastMoveSquares = [records[reviewIndex].mv.from, records[reviewIndex].mv.to];
+    render();
+    reviewModal.classList.add("show");
+    renderCurve();
+    renderMoveList();
+    renderCompare();
+    renderLearn();
+  }
+
+  function closeReview() {
+    reviewMode = false;
+    showBestOn = false;
+    reviewModal.classList.remove("show");
+    if (finalGame) game = finalGame;
+    lastMoveSquares = [];
+    render();
+  }
+
+  function loadReviewMove(i) {
+    if (i < 0 || i >= records.length) return;
+    reviewIndex = i;
+    game = showBestOn ? records[i].before : records[i].after;
+    lastMoveSquares = showBestOn ? [] : [records[i].mv.from, records[i].mv.to];
+    render();
+    renderMoveList();
+    renderCompare();
+  }
+
+  function prevReview() { loadReviewMove(reviewIndex - 1); }
+  function nextReview() { loadReviewMove(reviewIndex + 1); }
+
+  function toggleBestMove() {
+    showBestOn = !showBestOn;
+    if (records[reviewIndex]) {
+      game = showBestOn ? records[reviewIndex].before : records[reviewIndex].after;
+      lastMoveSquares = showBestOn ? [] : [records[reviewIndex].mv.from, records[reviewIndex].mv.to];
+    }
+    render();
+    renderCompare();
+    var btn = $("reviewBest");
+    if (btn) btn.textContent = showBestOn ? "隐藏最佳走法" : "摆出最佳走法";
+  }
+
+  function flagLabel(flag) {
+    if (flag === "blunder") return "败着";
+    if (flag === "mistake") return "失误";
+    if (flag === "inaccuracy") return "稍差";
+    return "好棋";
+  }
+
+  function fmtEval(cp) {
+    if (Math.abs(cp) > 900) return cp > 0 ? "胜势" : "败势";
+    return (cp >= 0 ? "+" : "") + (cp / 100).toFixed(1);
+  }
+
+  function renderCurve() {
+    if (!reviewCurve) return;
+    var n = records.length;
+    if (n === 0) { reviewCurve.innerHTML = ""; return; }
+    var pts = [];
+    for (var i = 0; i < n; i++) {
+      var e = Math.max(-800, Math.min(800, records[i].whiteEval));
+      var x = n === 1 ? 50 : 4 + i * (92 / (n - 1));
+      var y = 30 - (e / 800) * 26;
+      pts.push(x.toFixed(2) + "," + y.toFixed(2));
+    }
+    var poly = '<polyline fill="none" stroke="#f5d76e" stroke-width="1.6" points="' + pts.join(" ") + '"/>';
+    var dots = "";
+    for (var j = 0; j < n; j++) {
+      var e2 = Math.max(-800, Math.min(800, records[j].whiteEval));
+      var x2 = n === 1 ? 50 : 4 + j * (92 / (n - 1));
+      var y2 = 30 - (e2 / 800) * 26;
+      var col = records[j].flag === "good" ? "#4ade80" : records[j].flag === "inaccuracy" ? "#fbbf24" : records[j].flag === "mistake" ? "#fb923c" : "#f87171";
+      if (records[j].mover !== "player") col = "#8a8aa5";
+      dots += '<circle cx="' + x2.toFixed(2) + '" cy="' + y2.toFixed(2) + '" r="1.8" fill="' + col + '"/>';
+    }
+    reviewCurve.innerHTML = '<svg viewBox="0 0 100 60" preserveAspectRatio="none">' +
+      '<line x1="0" y1="30" x2="100" y2="30" stroke="#4d4d6e" stroke-width="0.4" stroke-dasharray="2 2"/>' +
+      poly + dots + '</svg>';
+  }
+
+  function renderMoveList() {
+    if (!reviewMoves) return;
+    var html = "";
+    var num = 0;
+    for (var i = 0; i < records.length; i++) {
+      var r = records[i];
+      var cls = "move-btn player-" + r.flag + (i === reviewIndex ? " active" : "");
+      var tag = r.mover === "player" ? flagLabel(r.flag) : fmtEval(r.whiteEval);
+      html += '<div class="move-row"><span class="move-num">' + (r.mover === "player" ? (++num) + "." : "") + '</span>' +
+        '<button class="' + cls + '" data-mi="' + i + '">' + r.san +
+        '<span class="desc">' + KNOWLEDGE.sanToText(r.san) + '</span>' +
+        '<span class="tag">' + tag + '</span></button></div>';
+    }
+    reviewMoves.innerHTML = html;
+    var btns = reviewMoves.querySelectorAll("[data-mi]");
+    for (var k = 0; k < btns.length; k++) {
+      btns[k].addEventListener("click", function () {
+        loadReviewMove(parseInt(this.getAttribute("data-mi"), 10));
+      });
+    }
+  }
+
+  function renderCompare() {
+    if (!reviewCompare || !records[reviewIndex]) return;
+    var r = records[reviewIndex];
+    var who = r.mover === "player" ? "你" : "对手";
+    var html = "第 " + (reviewIndex + 1) + " 步：" + who + "走了 <b>" + r.san + "</b>（" + KNOWLEDGE.sanToText(r.san) + "，评估 " + fmtEval(r.whiteEval) + "）";
+    if (r.bestSan && r.loss >= 40) {
+      var bestWhite = r.mover === "player" ? r.bestSc : -r.bestSc;
+      html += "<br>最佳走法是 <b>" + r.bestSan + "</b>（" + KNOWLEDGE.sanToText(r.bestSan) + "，" + fmtEval(bestWhite) + "）" +
+        (showBestOn ? "，已在棋盘上标出 👆" : "，点「摆出最佳走法」看看效果");
+    } else if (r.loss < 40) {
+      html += "<br>这步接近最佳，漂亮！";
+    }
+    reviewCompare.innerHTML = html;
+  }
+
+  function resultText() {
+    var st = CHESS.gameStatus(finalGame || game);
+    if (st === "checkmate") return (finalGame || game).turn === playerColor ? "你被将杀了，再接再厉！" : "你赢了，将杀漂亮！🎉";
+    if (st === "stalemate") return "逼和——差一点就赢了。";
+    if (st === "draw50") return "50 回合未吃子或动兵，和棋。";
+    if (st === "drawmaterial") return "子力不足，和棋。";
+    return "对局结束。";
+  }
+
+  function buildStats() {
+    var stats = { moves: 0, good: 0, inaccuracy: 0, mistake: 0, blunder: 0, captures: 0 };
+    for (var i = 0; i < records.length; i++) {
+      var r = records[i];
+      if (r.mover !== "player") continue;
+      stats.moves++;
+      stats[r.flag]++;
+      if (r.cap) stats.captures++;
+    }
+    if (stats.blunder > 0) addNote("blunder");
+    if (stats.captures >= 2) addNote("good-capture");
+    if (openingEntry) addNote("opening");
+    return stats;
+  }
+
+  function renderLearn() {
+    if (!reviewLearn) return;
+    var stats = buildStats();
+    var html = '<div class="learn">';
+    html += "<h3>本局总结</h3><p>" + resultText() + "</p>";
+    html += "<p>你下了 " + stats.moves + " 步：好棋 " + stats.good + "，稍差 " + stats.inaccuracy +
+      "，失误 " + stats.mistake + "，败着 " + stats.blunder + "。</p>";
+    if (openingEntry) html += "<p>开局：<b>" + openingEntry.name + "</b></p>";
+    if (knowledgeLog.length) {
+      html += "<h3>本局小知识</h3>";
+      for (var i = 0; i < knowledgeLog.length; i++) {
+        var k = knowledgeLog[i];
+        html += '<p class="know-log">💡 <b>' + k.title + "</b>：" + k.body + "</p>";
+      }
+    }
+    var lessons = KNOWLEDGE.pickLessons(knowledgeNotes);
+    if (lessons.length) {
+      html += "<h3>课后小课堂</h3>";
+      for (var j = 0; j < lessons.length; j++) {
+        html += "<p><b>" + lessons[j].title + "</b><br>" + lessons[j].body + "</p>";
+      }
+    }
+    html += "</div>";
+    reviewLearn.innerHTML = html;
+  }
+
+  function updateStatus() {
+    if (reviewMode && records[reviewIndex]) {
+      statusEl.textContent = "复盘 · " + (reviewIndex + 1) + "/" + records.length + " 步 · 评估 " + fmtEval(records[reviewIndex].whiteEval);
+      return;
+    }
+    var st = CHESS.gameStatus(game);
+    var turnName = game.turn === 1 ? "白方" : "黑方";
+    var text;
+    if (st === "checkmate") {
+      text = game.turn === playerColor ? "你输了 —— 被将杀" : "你赢了！🎉";
+    } else if (st === "stalemate") {
+      text = "和棋（逼和）";
+    } else if (st === "draw50") {
+      text = "和棋（50 回合规则）";
+    } else if (st === "drawmaterial") {
+      text = "和棋（子力不足）";
+    } else if (game.turn === playerColor) {
+      text = "轮到你（" + turnName + "）" + (st === "check" ? " · 你被将军！" : "");
+    } else {
+      text = "AI 思考中…" + (st === "check" ? " · 将军！" : "");
+    }
+    statusEl.textContent = text;
+  }
+
+  function updateMoveLog() {
+    var lines = [];
+    for (var i = 0; i < history.length; i++) {
+      var e = history[i];
+      var n = i + 1;
+      lines.push(n + ". " + e.player.san + (e.ai ? "  " + e.ai.san : ""));
+    }
+    moveLogEl.textContent = lines.join("\n");
+  }
+
+  function updateMaterial() {
+    var sc = CHESS.materialScores(game);
+    var diff = CHESS.material(game) / 100;
+    var total = sc.white + sc.black;
+    var wPct = total > 0 ? Math.round((sc.white / total) * 100) : 50;
+    materialBarW.style.width = wPct + "%";
+    materialBarB.style.width = (100 - wPct) + "%";
+    var text;
+    if (Math.abs(diff) < 0.05) text = "子力均衡";
+    else if (diff > 0) text = "白方 +" + diff.toFixed(1);
+    else text = "黑方 +" + (-diff).toFixed(1);
+    materialTextEl.textContent = text;
+  }
+
+  function openPromo() {
+    promoTitle.textContent = "兵升变为：";
+    var btns = promoModal.querySelectorAll("[data-promo]");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].textContent = PROMO_GLYPH[PROMO_PIECES[i]];
+      btns[i].className = "promo-piece " + (playerColor === 1 ? "white" : "black");
+    }
+    promoModal.classList.add("show");
+  }
+
+  function closePromo() {
+    promoModal.classList.remove("show");
+  }
+
+  function moveToSan(state, mv) {
+    var p = state.board[mv.from];
+    var t = CHESS.typeOf(p);
+    if (mv.castle) return mv.castle === "K" || mv.castle === "k" ? "O-O" : "O-O-O";
+    var pieceLetter = t === "p" ? "" : t.toUpperCase();
+    var cap = mv.ep ? true : !!state.board[mv.to];
+    var dest = CHESS.sqToName(mv.to);
+    var san = pieceLetter + (cap ? "x" : "") + dest;
+    if (mv.promotion) san += "=" + mv.promotion.toUpperCase();
+    var after = CHESS.makeMove(state, mv);
+    var st = CHESS.gameStatus(after);
+    if (st === "checkmate") san += "#";
+    else if (st === "check") san += "+";
+    return san;
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
+})();
+
+  </script>
+</body>
+</html>

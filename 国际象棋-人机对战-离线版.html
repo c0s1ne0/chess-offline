@@ -181,6 +181,8 @@
     color: #c9c9dd;
   }
   .hint { margin-top: 10px; font-size: 12px; color: #8a8aa5; text-align: center; }
+.hint-from, .hint-to { outline: 3px solid #ffcf4d; outline-offset: -3px; z-index: 3; }
+.hint-to { box-shadow: 0 0 0 4px rgba(255,207,77,.5) inset; }
   .modal {
     display: none;
     position: fixed;
@@ -322,6 +324,7 @@
       <button id="undo">悔棋</button>
       <button id="restart">重新开始</button>
       <button id="exportBtn">导出棋谱</button>
+<button id="hintBtn">💡 提示</button>
       <span class="zoom-group">
         <button id="zoomOut" title="缩小">－</button>
         <span id="zoomLabel" class="zoom-label">100%</span>
@@ -1093,6 +1096,7 @@
   var materialEl, materialTextEl, materialBarW, materialBarB;
   var zoomLabel;
   var toastEl, toastTimer, hintOn = true;
+  var hintFrom = -1, hintTo = -1;
   var exportModal, exportText;
   var reviewBtn, reviewModal, reviewCurve, reviewMoves, reviewCompare, reviewLearn;
   var zoom = 1;
@@ -1132,6 +1136,7 @@
     $("zoomOut").addEventListener("click", function () { changeZoom(-0.1); });
     $("zoomIn").addEventListener("click", function () { changeZoom(0.1); });
     $("hintToggle").addEventListener("change", function () { hintOn = this.checked; });
+  $("hintBtn").addEventListener("click", giveHint);
     $("exportBtn").addEventListener("click", openExport);
     $("exportClose").addEventListener("click", closeExport);
     $("exportCopy").addEventListener("click", copyExport);
@@ -1188,6 +1193,7 @@
   function newGame(color) {
     playerColor = color === -1 ? -1 : 1;
     game = CHESS.parseFen(CHESS.START_FEN);
+    hintFrom = -1; hintTo = -1;
     selected = -1;
     targets = [];
     history = [];
@@ -1228,6 +1234,8 @@
       if (i === captureFlashSq) cls += " capture";
       if (i === bmFrom) cls += " best-from";
       if (i === bmTo) cls += " best-to";
+      if (i === hintFrom) cls += " hint-from";
+      if (i === hintTo) cls += " hint-to";
       if (p && (p === "K" || p === "k") && CHESS.inCheck(game, CHESS.colorOf(p))) cls += " check";
       var dot = targets.some(function (m) { return m.to === i; }) ? '<span class="dot"></span>' : "";
       var f = i % 8, r = Math.floor(i / 8);
@@ -1391,11 +1399,29 @@
     });
     if (res.bite) showKnowledge(res.bite);
     else coachComment(rec, san);
+    hintFrom = -1; hintTo = -1;
     selected = -1;
     targets = [];
     render();
     if (!isOver()) scheduleAI();
     else endGame();
+  }
+
+  function sqName(i) { return "abcdefgh".charAt(i % 8) + (8 - Math.floor(i / 8)); }
+
+  function giveHint() {
+    var hintEl = document.querySelector(".hint");
+    if (reviewMode || isOver() || game.turn !== playerColor) {
+      if (hintEl) hintEl.textContent = "现在无法提示（可能不是你的回合，或对局已结束）";
+      return;
+    }
+    var h = CHESS.bestMove(game, EVAL_DEPTH);
+    if (!h) { if (hintEl) hintEl.textContent = "没有可建议的走法"; return; }
+    hintFrom = h.from; hintTo = h.to;
+    render();
+    var san = moveToSan(game, h);
+    var turn = game.turn === 1 ? "白" : "黑";
+    if (hintEl) hintEl.textContent = "💡 提示：" + turn + "方走 " + san + "（" + sqName(h.from) + " → " + sqName(h.to) + "）";
   }
 
   function scheduleAI() {
@@ -1458,6 +1484,7 @@
     game = entry.player.before;
     lastMoveSquares = [];
     captureFlashSq = -1;
+    hintFrom = -1; hintTo = -1;
     selected = -1;
     targets = [];
     if (reviewBtn) reviewBtn.classList.remove("show");

@@ -325,6 +325,9 @@
       <button id="restart">重新开始</button>
       <button id="exportBtn">导出棋谱</button>
 <button id="hintBtn">💡 提示</button>
+<button id="browsePrev">◀ 上一步</button>
+<button id="browseNext">下一步 ▶</button>
+<button id="browseExit">回到当下</button>
       <span class="zoom-group">
         <button id="zoomOut" title="缩小">－</button>
         <span id="zoomLabel" class="zoom-label">100%</span>
@@ -1097,6 +1100,7 @@
   var zoomLabel;
   var toastEl, toastTimer, hintOn = true;
   var hintFrom = -1, hintTo = -1;
+  var browseIndex = -1, liveGame = null;
   var exportModal, exportText;
   var reviewBtn, reviewModal, reviewCurve, reviewMoves, reviewCompare, reviewLearn;
   var zoom = 1;
@@ -1137,6 +1141,9 @@
     $("zoomIn").addEventListener("click", function () { changeZoom(0.1); });
     $("hintToggle").addEventListener("change", function () { hintOn = this.checked; });
   $("hintBtn").addEventListener("click", giveHint);
+  $("browsePrev").addEventListener("click", function () { browseStep(-1); });
+  $("browseNext").addEventListener("click", function () { browseStep(1); });
+  $("browseExit").addEventListener("click", exitBrowse);
     $("exportBtn").addEventListener("click", openExport);
     $("exportClose").addEventListener("click", closeExport);
     $("exportCopy").addEventListener("click", copyExport);
@@ -1199,6 +1206,7 @@
     history = [];
     pendingPromo = null;
     records = [];
+    browseIndex = -1; liveGame = null;
     playedSans = [];
     knowledgeNotes = [];
     knowledgeLog = [];
@@ -1262,6 +1270,7 @@
 
   function makeClick(i) {
     return function () {
+      if (browseIndex >= 0) return;
       if (reviewMode) return;
       if (game.turn !== playerColor || isOver()) return;
       var p = game.board[i];
@@ -1422,6 +1431,41 @@
     var san = moveToSan(game, h);
     var turn = game.turn === 1 ? "白" : "黑";
     if (hintEl) hintEl.textContent = "💡 提示：" + turn + "方走 " + san + "（" + sqName(h.from) + " → " + sqName(h.to) + "）";
+  }
+
+  function browseStep(delta) {
+    if (!records.length) return;
+    if (browseIndex < 0) {
+      if (game.turn !== playerColor) {
+        var he = document.querySelector(".hint");
+        if (he) he.textContent = "AI 正在走棋，等它走完再回看哦";
+        return;
+      }
+      liveGame = game;
+      browseIndex = records.length - 1 + delta;
+    } else {
+      browseIndex += delta;
+    }
+    if (browseIndex < 0) browseIndex = 0;
+    if (browseIndex >= records.length) { exitBrowse(); return; }
+    var r = records[browseIndex];
+    game = r.after;
+    lastMoveSquares = [r.mv.from, r.mv.to];
+    selected = -1; targets = [];
+    render();
+    var he2 = document.querySelector(".hint");
+    if (he2) he2.textContent = "回看中（第 " + (browseIndex + 1) + "/" + records.length + " 步）—— 点「回到当下」继续下棋";
+  }
+
+  function exitBrowse() {
+    if (browseIndex < 0) return;
+    browseIndex = -1;
+    if (liveGame) { game = liveGame; liveGame = null; }
+    lastMoveSquares = [];
+    selected = -1; targets = [];
+    render();
+    var he3 = document.querySelector(".hint");
+    if (he3) he3.textContent = "已回到当前局面";
   }
 
   function scheduleAI() {
@@ -1720,6 +1764,11 @@
   }
 
   function updateStatus() {
+    if (browseIndex >= 0 && records[browseIndex]) {
+      var rr = records[browseIndex];
+      statusEl.textContent = "回看 · 第 " + (browseIndex + 1) + "/" + records.length + " 步 · " + (rr.mover === "player" ? "你" : "AI") + " 走了 " + rr.san;
+      return;
+    }
     if (reviewMode && records[reviewIndex]) {
       statusEl.textContent = "复盘 · " + (reviewIndex + 1) + "/" + records.length + " 步 · 评估 " + fmtEval(records[reviewIndex].whiteEval);
       return;
